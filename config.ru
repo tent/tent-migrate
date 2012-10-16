@@ -33,7 +33,7 @@ class CatchErrors
   end
 end
 
-require 'tent_migrate'
+require 'tent-migrate'
 map '/' do
   use CatchErrors
   use Airbrake::Rack

@@ -1,4 +1,4 @@
-require 'tent_migrate/data'
+require 'tent-migrate/data'
 require 'girl_friday'
 require 'connection_pool'
 require 'tent-client'

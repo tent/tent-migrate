@@ -1,16 +1,16 @@
 # -*- encoding: utf-8 -*-
 lib = File.expand_path('../lib', __FILE__)
 $LOAD_PATH.unshift(lib) unless $LOAD_PATH.include?(lib)
-require 'tent_migrate/version'
+require 'tent-migrate/version'
 
 Gem::Specification.new do |gem|
-  gem.name          = "tent_migrate"
+  gem.name          = "tent-migrate"
   gem.version       = TentMigrate::VERSION
   gem.authors       = ["Jesse Stuart"]
   gem.email         = ["jessestuart@gmail.com"]
   gem.description   = %q{Move your data from one server to another}
   gem.summary       = %q{Move your data from one server to another}
-  gem.homepage      = "https://github.com/tent/tent_migrate"
+  gem.homepage      = "https://github.com/tent/tent-migrate"
 
   gem.files         = `git ls-files`.split($/)
   gem.executables   = gem.files.grep(%r{^bin/}).map{ |f| File.basename(f) }

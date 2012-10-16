@@ -4,8 +4,8 @@ require 'coffee_script'
 require 'sass'
 require 'yajl'
 require 'omniauth-tent'
-require 'tent_migrate/data'
-require 'tent_migrate/worker'
+require 'tent-migrate/data'
+require 'tent-migrate/worker'
 
 module TentMigrate
   class App < Sinatra::Base

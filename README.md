@@ -6,7 +6,7 @@ TODO: Write a gem description
 
 Add this line to your application's Gemfile:
 
-    gem 'tent_migrate'
+    gem 'tent-migrate'
 
 And then execute:
 
@@ -14,7 +14,7 @@ And then execute:
 
 Or install it yourself as:
 
-    $ gem install tent_migrate
+    $ gem install tent-migrate
 
 ## Usage
 
