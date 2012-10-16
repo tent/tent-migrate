@@ -6,6 +6,7 @@ $LOAD_PATH.unshift(lib) unless $LOAD_PATH.include?(lib)
 
 $stdout.sync = true
 
+require 'airbrake'
 Airbrake.configure do |config|
   config.api_key    = ENV['AIRBRAKE_API_KEY']
   config.host       = ENV['AIRBRAKE_HOST']

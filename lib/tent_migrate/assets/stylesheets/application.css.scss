@@ -1,0 +1,17 @@
+//= require bootstrap
+//= require_self
+
+@mixin opacity($amount) {
+  filter: alpha(opacity=$amount);
+	-khtml-opacity: $amount/100;
+	-moz-opacity: $amount/100;
+	opacity: $amount/100;
+}
+
+input.btn {
+  margin-bottom: 9px;
+}
+
+.disabled {
+  @include opacity(80)
+}
