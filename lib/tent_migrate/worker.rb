@@ -1,7 +1,7 @@
 require 'tent_migrate/data'
 require 'girl_friday'
 require 'connection_pool'
-require 'tent_client'
+require 'tent-client'
 
 module TentMigrate
   module Worker
@@ -15,7 +15,7 @@ module TentMigrate
     end
 
     def self.expire_job_data(job_key)
-      # TODO: set all redis keys related to job to expire in n days
+      Data.expire_job_data(job_key)
     end
 
     class Migration
@@ -32,11 +32,11 @@ module TentMigrate
       end
 
       def export_app
-        @export_app ||= Data::User.get_job_export_app(job_key)
+        @export_app ||= Data.get_job_export_app(job_key)
       end
 
       def import_app
-        @import_app ||= Data::User.get_job_import_app(job_key)
+        @import_app ||= Data.get_job_import_app(job_key)
       end
 
       def export_client
@@ -65,17 +65,25 @@ module TentMigrate
         res.body if res.success?
       end
 
-      def import_app(app)
-        # TODO: update tentd to handle this (should import app with authorizations)
+      def import_app!(app)
         res = import_client.app.create(app)
+        success = res.success?
+        if res.success?
+          app_id = app['id']
+          (app['authorizations'] || []).each do |app_authorization|
+            res = import_client.app.authorization.create(app_id, app_authorization)
+            success = res.success?
+          end
+        end
+        Data.increment_job_stat(job_key, 'imported_apps_count', 1) if success
+        res
       end
 
       def migrate_apps
         return unless apps = export_apps
-        # TODO: save count of exported apps
-        # TODO: save count of imported apps
+        Data.increment_job_stat(job_key, 'exported_apps_count', apps.size)
         apps.each do |app|
-          import_app(app)
+          import_app!(app)
         end
       end
 
@@ -91,18 +99,21 @@ module TentMigrate
 
       def import_follower(follower)
         res = import_client.follower.create(follower)
+        Data.increment_job_stat(job_key, 'imported_followers_count', 1) if res.success?
+        res
       end
 
       def migrate_followers
-        total_pages = (count_followers / PER_PAGE).ceil
-        # TODO: save count of followers
-        # TODO: save count of exported followers
-        # TODO: save count of imported followers
+        followers_count = count_followers
+        total_pages = (followers_count / PER_PAGE).ceil
+        Data.set_job_stat(job_key, "followers_count", followers_count)
         params = {}
         total_pages.times do
           followers = export_followers(params)
           return unless followers
           params[:before_id] = followers.last['id']
+
+          Data.increment_job_stat(job_key, 'exported_followers_count', followers.size)
 
           followers.each { |f| import_follower(f) }
         end
@@ -119,19 +130,22 @@ module TentMigrate
       end
 
       def import_following(following)
-        res = import_client.following.create(following)
+        res = import_client.following.create(following['entity'], following)
+        Data.increment_job_stat(job_key, 'imported_followings_count', 1) if res.success?
+        res
       end
 
       def migrate_followings
-        total_pages = (count_followings / PER_PAGE).ceil
-        # TODO: save count of followings
-        # TODO: save count of exported followings
-        # TODO: save count of imported followings
+        followings_count = count_followings
+        total_pages = (followings_count / PER_PAGE).ceil
+        Data.set_job_stat(job_key, "followings_count", followings_count)
         params = {}
         total_pages.times do
           followings = export_followings(params)
           return unless followings
           params[:before_id] = followings.last['id']
+
+          Data.increment_job_stat(job_key, 'exported_followings_count', followings.size)
 
           followings.each { |f| import_following(f) }
         end
@@ -149,18 +163,21 @@ module TentMigrate
 
       def import_group(group)
         res = import_client.group.create(group)
+        Data.increment_job_stat(job_key, 'imported_groups_count', 1) if res.success?
+        res
       end
 
       def migrate_groups
-        total_pages = (count_groups / PER_PAGE).ceil
-        # TODO: save count of groups
-        # TODO: save count of exported groups
-        # TODO: save count of imported groups
+        groups_count = count_groups
+        total_pages = (groups_count / PER_PAGE).ceil
+        Data.set_job_stat(job_key, "groups_count", groups_count)
         params = {}
         total_pages.times do
           groups = export_groups(params)
           return unless groups
           params[:before_id] = groups.last['id']
+
+          Data.increment_job_stat(job_key, 'exported_groups_count', groups.size)
 
           groups.each { |f| import_group(f) }
         end
@@ -176,23 +193,33 @@ module TentMigrate
         res.body if res.success?
       end
 
+      def export_post_versions(post_id, params={})
+        res = export_client.post.version.list(post_id, params)
+        res.body if res.success?
+      end
+
       def import_post(post)
-        res = import_client.post.create(post)
+        post_versions = export_post_versions(post['id']) # TODO: handle more than 200 post versions
+        post_versions.sort_by { |p| p['version'] * -1 }.map do |post_version|
+          res = import_client.post.create(post_version)
+          Data.increment_job_stat(job_key, 'imported_posts_count', 1) if res.success?
+          res
+        end
       end
 
       def migrate_posts
-        total_pages = (count_posts / PER_PAGE).ceil
-        # TODO: save count of posts
-        # TODO: save count of exported posts
-        # TODO: save count of imported posts
-        # TODO: handle post versions
+        posts_count = count_posts
+        total_pages = (posts_count / PER_PAGE).ceil
+        Data.set_job_stat(job_key, 'posts_count', count_posts)
         params = {}
         total_pages.times do
           posts = export_posts(params)
           return unless posts
           params[:before_id] = posts.last['id']
 
-          posts.each { |f| import_post(f) }
+          Data.increment_job_stat(job_key, 'exported_posts_count', posts.size)
+
+          posts.each { |post| import_post(post) }
         end
       end
 
