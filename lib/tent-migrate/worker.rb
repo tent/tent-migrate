@@ -188,6 +188,14 @@ module TentMigrate
         res.success? ? res.body.to_f : 0
       end
 
+      def first_post_id
+        res = export_client.post.list(
+          :since_time => 0,
+          :limit => 1
+        )
+        res.body['id'] if res.success?
+      end
+
       def export_posts(params)
         res = export_client.post.list(params)
         res.body if res.success?
@@ -211,11 +219,13 @@ module TentMigrate
         posts_count = count_posts
         total_pages = (posts_count / PER_PAGE).ceil
         Data.set_job_stat(job_key, 'posts_count', count_posts)
-        params = {}
+        params = {
+          :since_id => first_post_id
+        }
         total_pages.times do
           posts = export_posts(params)
           return unless posts
-          params[:before_id] = posts.last['id']
+          params[:since_id] = posts.first['id']
 
           Data.increment_job_stat(job_key, 'exported_posts_count', posts.size)
 
