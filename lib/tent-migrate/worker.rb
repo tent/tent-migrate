@@ -193,7 +193,7 @@ module TentMigrate
           :since_time => 0,
           :limit => 1
         )
-        res.body['id'] if res.success?
+        res.body.first['id'] if res.success?
       end
 
       def export_posts(params)
