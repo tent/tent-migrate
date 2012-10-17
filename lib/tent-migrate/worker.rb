@@ -206,10 +206,17 @@ module TentMigrate
         res.body if res.success?
       end
 
+      def migrate_post_entity(post)
+        if export_app['entity'] == post['entity']
+          post['entity'] = import_app['entity']
+        end
+        post
+      end
+
       def import_post(post)
         post_versions = export_post_versions(post['id']) # TODO: handle more than 200 post versions
         post_versions.sort_by { |p| p['version'] * -1 }.map do |post_version|
-          res = import_client.post.create(post_version)
+          res = import_client.post.create(migrate_post_entity(post_version))
           Data.increment_job_stat(job_key, 'imported_posts_count', 1) if res.success?
           res
         end
