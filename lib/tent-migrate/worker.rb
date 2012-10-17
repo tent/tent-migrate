@@ -40,11 +40,11 @@ module TentMigrate
       end
 
       def export_client
-        @export_client ||= TentClient.new(export_app['servers'], export_app['auth'])
+        @export_client ||= TentClient.new(export_app['servers'], export_app['auth'].inject({}) { |memo, (k,v)| memo[k.to_sym] = v; memo })
       end
 
       def import_client
-        @import_client ||= TentClient.new(import_app['servers'], import_app['auth'])
+        @import_client ||= TentClient.new(import_app['servers'], import_app['auth'].inject({}) { |memo, (k,v)| memo[k.to_sym] = v; memo })
       end
 
       def perform
@@ -107,11 +107,14 @@ module TentMigrate
         followers_count = count_followers
         total_pages = (followers_count / PER_PAGE).ceil
         Data.set_job_stat(job_key, "followers_count", followers_count)
-        params = {}
+        params = {
+          :limit => PER_PAGE,
+          :reverse => false
+        }
         total_pages.times do
           followers = export_followers(params)
           return unless followers
-          params[:before_id] = followers.last['id']
+          params[:since_id] = followers.last['id']
 
           Data.increment_job_stat(job_key, 'exported_followers_count', followers.size)
 
@@ -139,11 +142,14 @@ module TentMigrate
         followings_count = count_followings
         total_pages = (followings_count / PER_PAGE).ceil
         Data.set_job_stat(job_key, "followings_count", followings_count)
-        params = {}
+        params = {
+          :limit => PER_PAGE,
+          :reverse => false
+        }
         total_pages.times do
           followings = export_followings(params)
           return unless followings
-          params[:before_id] = followings.last['id']
+          params[:since_id] = followings.last['id']
 
           Data.increment_job_stat(job_key, 'exported_followings_count', followings.size)
 
@@ -171,11 +177,14 @@ module TentMigrate
         groups_count = count_groups
         total_pages = (groups_count / PER_PAGE).ceil
         Data.set_job_stat(job_key, "groups_count", groups_count)
-        params = {}
+        params = {
+          :limit => PER_PAGE,
+          :reverse => false
+        }
         total_pages.times do
           groups = export_groups(params)
           return unless groups
-          params[:before_id] = groups.last['id']
+          params[:since_id] = groups.last['id']
 
           Data.increment_job_stat(job_key, 'exported_groups_count', groups.size)
 
@@ -188,12 +197,13 @@ module TentMigrate
         res.success? ? res.body.to_f : 0
       end
 
-      def first_post_id
+      def get_first_post
         res = export_client.post.list(
           :since_time => 0,
-          :limit => 1
+          :limit => 1,
+          :reverse => false
         )
-        res.body.first['id'] if res.success?
+        res.body.first if res.success?
       end
 
       def export_posts(params)
@@ -215,10 +225,16 @@ module TentMigrate
 
       def import_post(post)
         post_versions = export_post_versions(post['id']) # TODO: handle more than 200 post versions
-        post_versions.sort_by { |p| p['version'] * -1 }.map do |post_version|
-          res = import_client.post.create(migrate_post_entity(post_version))
+        if post_versions
+          post_versions.sort_by { |p| p['version'] * -1 }.map do |post_version|
+            res = import_client.post.create(migrate_post_entity(post_version))
+            Data.increment_job_stat(job_key, 'imported_posts_count', 1) if res.success?
+            res
+          end
+        else
+          res = import_client.post.create(post)
           Data.increment_job_stat(job_key, 'imported_posts_count', 1) if res.success?
-          res
+          [res]
         end
       end
 
@@ -226,13 +242,18 @@ module TentMigrate
         posts_count = count_posts
         total_pages = (posts_count / PER_PAGE).ceil
         Data.set_job_stat(job_key, 'posts_count', count_posts)
+        first_post = get_first_post
+        return unless first_post
+        import_post(first_post)
         params = {
-          :since_id => first_post_id
+          :since_id => first_post['id'],
+          :limit => PER_PAGE.to_i,
+          :reverse => false
         }
         total_pages.times do
           posts = export_posts(params)
-          return unless posts
-          params[:since_id] = posts.first['id']
+          return unless posts && posts.size > 0
+          params[:since_id] = posts.last['id']
 
           Data.increment_job_stat(job_key, 'exported_posts_count', posts.size)
 
@@ -242,15 +263,17 @@ module TentMigrate
 
       def export_profile
         res = export_client.profile.get
-        res.body
+        res.body if res.success?
       end
 
       def import_profile(type, data)
         res = import_client.profile.update(type, data)
+        Data.increment_job_stat(job_key, "imported_profile_infos_count", 1) if res.success?
       end
 
       def migrate_profile
         profile = export_profile
+        Data.set_job_stat(job_key, "profile_infos_count", profile.keys.size)
         profile.each_pair do |type, data|
           import_profile(type, data)
         end
