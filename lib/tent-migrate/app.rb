@@ -145,6 +145,7 @@ module TentMigrate
         :scopes => {
           'read_posts'        => '',
           'import_posts'      => '',
+          'write_posts'       => '',
           'read_profile'      => 'Access your basic information',
           'write_profile'     => '',
           'read_followers'    => '',

@@ -21,6 +21,9 @@ module TentMigrate
     class Migration
       PER_PAGE = 200.0
 
+      class Error < StandardError
+      end
+
       def self.perform(job_key)
         new(job_key).perform
       end
@@ -48,153 +51,149 @@ module TentMigrate
       end
 
       def perform
-        migrate_apps # apps + authorizations
-        migrate_followers # followers
-        migrate_followings # followings
-        migrate_groups # groups
-        migrate_posts # posts + permissions
         migrate_profile
+        migrate_posts
+        migrate_apps
 
         Worker.expire_job_data(job_key)
       end
 
       private
 
-      def export_apps
-        res = export_client.app.list
-        res.body if res.success?
-      end
-
-      def import_app!(app)
-        res = import_client.app.create(app)
-        success = res.success?
-        if res.success?
-          app_id = app['id']
-          (app['authorizations'] || []).each do |app_authorization|
-            res = import_client.app.authorization.create(app_id, app_authorization)
-            success = res.success?
-          end
-        end
-        Data.increment_job_stat(job_key, 'imported_apps_count', 1) if success
-        res
+      def error_response?(res)
+        ((400...500).to_a - [404, 409]).include?(res)
       end
 
       def migrate_apps
-        return unless apps = export_apps
+        apps = export_apps
         Data.increment_job_stat(job_key, 'exported_apps_count', apps.size)
         apps.each do |app|
-          import_app!(app)
+          import_app_with_authorizations(app)
         end
       end
 
-      def count_followers
-        res = export_client.follower.count
-        res.success? ? res.body.to_f : 0
+      def export_apps
+        res = export_client.app.list
+        raise Error.new(res.body) if error_response?(res)
+        res.body
       end
 
-      def export_followers(params)
-        res = export_client.follower.list(params)
-        res.body if res.success?
+      def import_app_with_authorizations(app)
+        res = import_client.app.create(app)
+        raise Error.new(res.body) if error_response?(res)
+        if error_response?(res)
+          app_id = app['id']
+          (app['authorizations'] || []).each do |app_authorization|
+            res = import_client.app.authorization.create(app_id, app_authorization)
+            raise Error.new(res.body) if error_response?(res)
+          end
+        end
+        Data.increment_job_stat(job_key, 'imported_apps_count', 1)
       end
 
-      def import_follower(follower)
-        res = import_client.follower.create(follower)
-        Data.increment_job_stat(job_key, 'imported_followers_count', 1) if res.success?
-        res
-      end
-
-      def migrate_followers
-        followers_count = count_followers
-        total_pages = (followers_count / PER_PAGE).ceil
-        Data.set_job_stat(job_key, "followers_count", followers_count)
-        params = {
-          :limit => PER_PAGE,
-          :reverse => false
-        }
-        total_pages.times do
-          followers = export_followers(params)
-          return unless followers
-          params[:since_id] = followers.last['id']
-
-          Data.increment_job_stat(job_key, 'exported_followers_count', followers.size)
-
-          followers.each { |f| import_follower(f) }
+      def import_post(post)
+        case post['type']
+        when %r{\Ahttps://tent.io/types/post/group/}
+          import_group_post(post)
+        when %r{\Ahttps://tent.io/types/post/following/}
+          import_following_post(post)
+        when %r{\Ahttps://tent.io/types/post/follower/}
+          import_follower_post(post)
+        when %r{\Ahttps://tent.io/types/post/profile/}
+          # ignore
+        when %r{\Ahttps://tent.io/types/post/delete/}
+          import_delete_post(post)
+        else
+          import_standard_post(post)
         end
       end
 
-      def count_followings
-        res = export_client.following.count
-        res.success? ? res.body.to_f : 0
-      end
-
-      def export_followings(params)
-        res = export_client.following.list(params)
-        res.body if res.success?
-      end
-
-      def import_following(following)
-        res = import_client.following.create(following['entity'], following)
-        Data.increment_job_stat(job_key, 'imported_followings_count', 1) if res.success?
-        res
-      end
-
-      def migrate_followings
-        followings_count = count_followings
-        total_pages = (followings_count / PER_PAGE).ceil
-        Data.set_job_stat(job_key, "followings_count", followings_count)
-        params = {
-          :limit => PER_PAGE,
-          :reverse => false
-        }
-        total_pages.times do
-          followings = export_followings(params)
-          return unless followings
-          params[:since_id] = followings.last['id']
-
-          Data.increment_job_stat(job_key, 'exported_followings_count', followings.size)
-
-          followings.each { |f| import_following(f) }
+      def import_group_post(post)
+        case post['action']
+        when 'create'
+          res = export_client.group.get(post['id'])
+          return if res.status == 404
+          raise Error.new(res.body) if error_response?(res)
+          group = res.body
+          import_group(group)
+        when 'delete'
+          res = export_client.group.delete(post['id'])
+          return if res.status == 404
+          raise Error.new(res.body) if error_response?(res)
+          Data.increment_job_stat(job_key, 'imported_groups_count', -1)
         end
-      end
-
-      def count_groups
-        res = export_client.group.count
-        res.success? ? res.body.to_f : 0
-      end
-
-      def export_groups(params)
-        res = export_client.group.list(params)
-        res.body if res.success?
       end
 
       def import_group(group)
         res = import_client.group.create(group)
-        Data.increment_job_stat(job_key, 'imported_groups_count', 1) if res.success?
+        raise Error.new(res.body) if error_response?(res)
+        Data.increment_job_stat(job_key, 'imported_groups_count', 1)
         res
       end
 
-      def migrate_groups
-        groups_count = count_groups
-        total_pages = (groups_count / PER_PAGE).ceil
-        Data.set_job_stat(job_key, "groups_count", groups_count)
-        params = {
-          :limit => PER_PAGE,
-          :reverse => false
-        }
-        total_pages.times do
-          groups = export_groups(params)
-          return unless groups
-          params[:since_id] = groups.last['id']
-
-          Data.increment_job_stat(job_key, 'exported_groups_count', groups.size)
-
-          groups.each { |f| import_group(f) }
+      def import_following_post(post)
+        case post['action']
+        when 'create'
+          res = export_client.following.get(post['id'])
+          return if res.status == 404
+          raise Error.new(res.body) if error_response?(res)
+          following = res.body
+          import_following(following)
+        when 'delete'
+          res = import_client.following.delete(post['id'])
+          return if res.status == 404
+          raise Error.new(res.body) if error_response?(res)
+          Data.increment_job_stat(job_key, 'imported_followings_count', -1)
         end
       end
 
-      def count_posts
-        res = export_client.post.count
-        res.success? ? res.body.to_f : 0
+      def import_following(following)
+        res = import_client.following.create(following['entity'], following)
+        raise Error.new(res.body) if error_response?(res)
+        Data.increment_job_stat(job_key, 'imported_followings_count', 1)
+      end
+
+      def import_follower_post(post)
+        case post['action']
+        when 'create'
+          res = export_client.follower.get(post['id'])
+          return if res.status == 404
+          raise Error.new(res.body) if error_response?(res)
+          follower = res.body
+          import_follower(follower)
+        when 'delete'
+          res = import_client.follower.delete(post['id'])
+          return if res.status == 404
+          raise Error.new(res.body) if error_response?(res)
+          Data.increment_job_stat(job_key, 'imported_followers_count', -1)
+        end
+      end
+
+      def import_follower(follower)
+        res = import_client.follower.create(follower)
+        raise Error.new(res.body) if error_response?(res)
+        Data.increment_job_stat(job_key, 'imported_followers_count', 1)
+      end
+
+      def import_delete_post(post)
+        res = import_client.post.delete(post['id'])
+        raise Error.new(res.body) if error_response?(res)
+        Data.increment_job_stat(job_key, 'imported_posts_count', -1)
+      end
+
+      def import_standard_post(post)
+        post_versions = export_post_versions(post['id']) # TODO: handle more than 200 post versions
+        if post_versions
+          post_versions.sort_by { |p| p['version'] * -1 }.map do |post_version|
+            res = import_client.post.create(post_version)
+            Data.increment_job_stat(job_key, 'imported_posts_count', 1) if error_response?(res)
+            res
+          end
+        else
+          res = import_client.post.create(post)
+          Data.increment_job_stat(job_key, 'imported_posts_count', 1) if error_response?(res)
+          [res]
+        end
       end
 
       def get_first_post
@@ -203,45 +202,20 @@ module TentMigrate
           :limit => 1,
           :reverse => false
         )
-        res.body.first if res.success?
+        res.body.first if error_response?(res)
       end
 
       def export_posts(params)
         res = export_client.post.list(params)
-        res.body if res.success?
+        res.body if error_response?(res)
       end
 
       def export_post_versions(post_id, params={})
         res = export_client.post.version.list(post_id, params)
-        res.body if res.success?
-      end
-
-      def migrate_post_entity(post)
-        if export_app['entity'] == post['entity']
-          post['entity'] = import_app['entity']
-        end
-        post
-      end
-
-      def import_post(post)
-        post_versions = export_post_versions(post['id']) # TODO: handle more than 200 post versions
-        if post_versions
-          post_versions.sort_by { |p| p['version'] * -1 }.map do |post_version|
-            res = import_client.post.create(migrate_post_entity(post_version))
-            Data.increment_job_stat(job_key, 'imported_posts_count', 1) if res.success?
-            res
-          end
-        else
-          res = import_client.post.create(post)
-          Data.increment_job_stat(job_key, 'imported_posts_count', 1) if res.success?
-          [res]
-        end
+        res.body if error_response?(res)
       end
 
       def migrate_posts
-        posts_count = count_posts
-        total_pages = (posts_count / PER_PAGE).ceil
-        Data.set_job_stat(job_key, 'posts_count', count_posts)
         first_post = get_first_post
         return unless first_post
         import_post(first_post)
@@ -250,9 +224,7 @@ module TentMigrate
           :limit => PER_PAGE.to_i,
           :reverse => false
         }
-        total_pages.times do
-          posts = export_posts(params)
-          return unless posts && posts.size > 0
+        while (posts = export_posts(params)) && posts.size > 0
           params[:since_id] = posts.last['id']
 
           Data.increment_job_stat(job_key, 'exported_posts_count', posts.size)
@@ -261,18 +233,29 @@ module TentMigrate
         end
       end
 
+      def add_export_server_to_profile(key, export_core_profile)
+        export_core_profile['servers'].concat(import_app['servers'])
+        export_client.profile.update(key, export_core_profile)
+      end
+
       def export_profile
         res = export_client.profile.get
-        res.body if res.success?
+        raise Error.new(res.body) if error_response?(res)
+        res.body
       end
 
       def import_profile(type, data)
         res = import_client.profile.update(type, data)
-        Data.increment_job_stat(job_key, "imported_profile_infos_count", 1) if res.success?
+        raise Error.new(res.body) if error_response?(res)
+        Data.increment_job_stat(job_key, "imported_profile_infos_count", 1)
       end
 
       def migrate_profile
         profile = export_profile
+        core_profile_key, core_profile = profile.find { |type, data| type =~ %r{\Ahttps://tent.io/types/info/core/} }
+        raise Error.new('core_profile missing') unless core_profile_key && core_profile
+        add_export_server_to_profile(core_profile_key, core_profile)
+
         Data.set_job_stat(job_key, "profile_infos_count", profile.keys.size)
         profile.each_pair do |type, data|
           import_profile(type, data)
