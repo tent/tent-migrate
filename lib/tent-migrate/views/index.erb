@@ -1,5 +1,3 @@
-<h1 class='page-header'>Tent Migrate</h1>
-
 <p class='lead'>To get started, authenticate with both your Tent servers.</p>
 
 <div class='row'>
@@ -17,6 +15,6 @@
 <% if @export_entity %>
   <form action='/jobs/<%= @job_key %>' method='POST'>
     <%= method_override 'DELETE' %>
-    <input type='submit' class='btn btn-danger' value='Cancel and start over' />
+    <input type='submit' class='m-btn red' value='Cancel and start over' />
   </form>
 <% end %>
