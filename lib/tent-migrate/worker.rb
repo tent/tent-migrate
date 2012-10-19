@@ -268,14 +268,6 @@ module TentMigrate
         end
       end
 
-      def add_export_server_to_profile(key, export_core_profile)
-        raise Error.new("import app must have valid profile") unless import_app['servers']
-        import_app['servers'].each do |url|
-          export_core_profile['servers'] << url unless export_core_profile['servers'].include?(url)
-        end
-        export_client.profile.update(key, export_core_profile)
-      end
-
       def export_profile
         res = export_client.profile.get
         raise Error.new(res.body) if error_response?(res)
@@ -292,12 +284,9 @@ module TentMigrate
 
       def migrate_profile
         profile = export_profile
-        core_profile_key, core_profile = profile.find { |type, data| type =~ %r{\Ahttps://tent.io/types/info/core/} }
-        raise Error.new('core_profile missing') unless core_profile_key && core_profile
-        add_export_server_to_profile(core_profile_key, core_profile)
-
         Data.set_job_stat(job_key, "profile_infos_count", profile.keys.size)
         profile.each_pair do |type, data|
+          next if type =~ %r{\Ahttps://tent.io/types/info/core/}
           import_profile(type, data)
         end
       end
