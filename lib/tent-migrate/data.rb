@@ -83,6 +83,11 @@ module TentMigrate
         parse_json(redis_client.get(import_app_key))
       end
 
+      def log_job_exception(job_key, exception)
+        puts ["ERROR: #{exception.inspect}", [nil].concat(exception.backtrace).join("\n\t")]
+        increment_job_stat(job_key, "errors_count", 1)
+      end
+
       def set_job_stat(job_key, stat_key, stat)
         redis_client.hset("#{job_key}-stats", stat_key, stat)
       end
@@ -91,8 +96,22 @@ module TentMigrate
         redis_client.hincrby("#{job_key}-stats", stat_key, amount)
       end
 
+      def job_stat_set_add(job_key, stat_key, item)
+        redis_client.sadd("#{job_key}-#{stat_key}", item)
+      end
+
+      def job_stat_set_get(job_key, stat_key)
+        redis_client.smembers("#{job_key}-#{stat_key}")
+      end
+
+      def job_stat_set_diff(job_key, stat_key1, stat_key2)
+        redis_client.sdiff("#{job_key}-#{stat_key1}", "#{job_key}-#{stat_key2}")
+      end
+
       def get_job_stats(job_key)
-        redis_client.hgetall("#{job_key}-stats")
+        key = "#{job_key}-stats"
+        return unless redis_client.exists(key)
+        redis_client.hgetall(key)
       end
 
       def expire_job_data(job_key)

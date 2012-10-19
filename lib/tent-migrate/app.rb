@@ -193,6 +193,7 @@ module TentMigrate
 
       app_key = Data.set_import_app_from_auth_hash(env['omniauth.auth'])
       Data.set_job_import_app(job_key, app_key)
+      Data.set_job_stat(job_key, 'started_at', Time.now.to_i)
 
       Worker::MIGRATE_QUEUE << job_key
 
@@ -200,11 +201,18 @@ module TentMigrate
     end
 
     get '/auth/failure' do
-      env.inspect
+      redirect '/?auth_error=true'
     end
 
     get '/jobs/:job_key' do
-      @stats = Hashie::Mash.new(Data.get_job_stats(params[:job_key]))
+      job_key = params[:job_key]
+      stats = Data.get_job_stats(job_key)
+      redirect '/' unless stats
+
+      @stats = Hashie::Mash.new(stats)
+      @stats.exported_post_ids = Data.job_stat_set_get(job_key, 'exported_post_ids')
+      @stats.imported_post_ids = Data.job_stat_set_get(job_key, 'imported_post_ids')
+      @stats.failed_post_ids = Data.job_stat_set_diff(job_key, 'exported_post_ids', 'imported_post_ids')
       erb :stats
     end
 
@@ -212,6 +220,10 @@ module TentMigrate
       Data.delete_job(params[:job_key])
       session.delete(params[:job_key])
       redirect '/'
+    end
+
+    post '/webhooks' do
+      status 200
     end
   end
 end

@@ -34,12 +34,14 @@ class CatchErrors
 end
 
 require 'tent-migrate'
+require 'rack/session/redis'
 map '/' do
   use CatchErrors
   use Airbrake::Rack
-  use Rack::Session::Cookie, :key => 'tent-status.session',
-                             :expire_after => 2592000, # 1 month
-                             :secret => ENV['COOKIE_SECRET'] || SecureRandom.hex
+  use Rack::Session::Redis, :redis_server => ENV['REDIS_URL'],
+                            :namespace => 'session:tent-migrate',
+                            :secret => ENV['COOKIE_SECRET'],
+                            :expire_after => 2592000 # 1 month
   run TentMigrate::App.new
 end
 
