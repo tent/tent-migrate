@@ -284,9 +284,9 @@ module TentMigrate
 
       def migrate_profile
         profile = export_profile
-        Data.set_job_stat(job_key, "profile_infos_count", profile.keys.size)
         profile.each_pair do |type, data|
           next if type =~ %r{\Ahttps://tent.io/types/info/core/}
+          Data.set_job_stat(job_key, "profile_infos_count", 1)
           import_profile(type, data)
         end
       end
