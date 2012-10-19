@@ -218,7 +218,7 @@ module TentMigrate
 
     delete '/jobs/:job_key' do
       Data.delete_job(params[:job_key])
-      session.delete(params[:job_key])
+      session.delete('job_key')
       redirect '/'
     end
 
