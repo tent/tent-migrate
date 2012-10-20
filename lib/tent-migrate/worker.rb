@@ -59,6 +59,7 @@ module TentMigrate
         migrate_followings
         migrate_posts
         migrate_apps
+        create_migration_completed_post
 
         Worker.expire_job_data(job_key)
       rescue => e
@@ -285,6 +286,31 @@ module TentMigrate
           Data.set_job_stat(job_key, "profile_infos_count", 1)
           import_profile(type, data)
         end
+      end
+
+      def create_migration_completed_post
+        stats = Hashie::Mash.new(Data.get_job_stats(job_key))
+        msg = "Migration Complete (#{Time.now.to_i - stats.started_at.to_i} s): "
+        msg << "#{stats.exported_posts_count.to_i}/#{stats.imported_posts_count.to_i} posts, "
+        msg << "#{stats.exported_followers_count.to_i}/#{stats.imported_followers_count.to_i} followers, "
+        msg << "#{stats.exported_followings_count.to_i}/#{stats.imported_followings_count.to_i} followings, "
+        msg << "#{stats.exported_groups_count.to_i}/#{stats.imported_groups_count.to_i} groups, "
+        msg << "#{stats.exported_apps_count.to_i}/#{stats.imported_apps_count.to_i} apps, "
+        msg << "#{stats.profile_infos_count.to_i}/#{stats.imported_profile_infos_count.to_i} profile infos, "
+        msg << "#{stats.errors_count.to_i} errors. "
+        msg << "#{ENV['HOST_DOMAIN']}/jobs/#{job_key}"
+        attrs = {
+          :type => 'https://tent.io/types/post/status/v0.1.0',
+          :content => {
+            :text => msg
+          },
+          :permissions => {
+            :public => false
+          }
+        }
+
+        export_client.post.create(attrs.merge(:entity => export_app['entity']))
+        import_client.post.create(attrs.merge(:entity => import_app['entity']))
       end
     end
   end
