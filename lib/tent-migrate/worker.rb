@@ -240,7 +240,7 @@ module TentMigrate
         params = {
           :secrets => true,
           :limit => PER_PAGE.to_i,
-          :reverse => false
+          :order => 'asc'
         }.merge(params)
 
         loop do
