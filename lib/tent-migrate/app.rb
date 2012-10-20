@@ -180,7 +180,7 @@ module TentMigrate
     end
 
     get '/export/auth/tent/callback' do
-      session['job_key'] = job_key = SecureRandom.hex(32)
+      session['job_key'] = job_key = SecureRandom.hex(4)
       app_key = Data.set_export_app_from_auth_hash(env['omniauth.auth'])
       Data.set_job_export_app(job_key, app_key)
 
