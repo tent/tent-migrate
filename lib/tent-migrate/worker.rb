@@ -236,18 +236,6 @@ module TentMigrate
         res.body
       end
 
-      def get_first_post
-        res = export_client.post.list(
-          :since_time => 0,
-          :limit => 1,
-          :secrets => true,
-          :reverse => false
-        )
-        raise Error.new(res.body) if error_response?(res)
-        return unless res.success?
-        res.body.first
-      end
-
       def paginate(process_item, params={}, &block)
         params = {
           :secrets => true,
@@ -268,14 +256,7 @@ module TentMigrate
       end
 
       def migrate_posts
-        first_post = get_first_post
-        p ['first_post', first_post]
-        return unless first_post
-        import_post(first_post)
-        params = {
-          :since_id => first_post['id'],
-        }
-        paginate(lambda { |post| import_post(post) }, params) do |params|
+        paginate(lambda { |post| import_post(post) }) do |params|
           res = export_client.post.list(params)
           raise Error.new(res.body) if error_response?(res)
           return unless res.success?
