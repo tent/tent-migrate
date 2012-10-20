@@ -197,8 +197,20 @@ module TentMigrate
       end
 
       def update_post_entity(post)
-        return post unless post['entity'] == export_app['entity']
-        post['entity'] = import_app['entity']
+        if post['entity'] == export_app['entity']
+          post['entity'] = import_app['entity']
+        end
+
+        # repost
+        if post['content'] && post['content']['entity'] == export_app['entity']
+          post['content']['entity'] = import_app['entity']
+        end
+
+        post['mentions'].to_a.each do |mention|
+          next unless mention['entity'] == export_app['entity']
+          mention['entity'] = import_app['entity']
+        end
+
         post
       end
 
