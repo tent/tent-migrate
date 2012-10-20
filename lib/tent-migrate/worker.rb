@@ -54,6 +54,7 @@ module TentMigrate
 
       def perform
         migrate_profile
+        migrate_groups
         migrate_followers
         migrate_followings
         migrate_posts
@@ -115,6 +116,26 @@ module TentMigrate
         Data.increment_job_stat(job_key, 'imported_apps_count', 1)
       end
 
+      def migrate_groups
+        paginate(lambda { |group|
+          Data.increment_job_stat(job_key, 'exported_groups_count', 1)
+          import_group(group)
+        }) do |params|
+          res = export_client.group.list(params)
+          raise Error.new(res.body) if error_response?(res)
+          res.body
+        end
+      end
+
+      def import_group(group)
+        p ['import_group', group]
+        res = import_client.group.create(group)
+        raise Error.new("#{res.body}\n#{group.inspect}") if error_response?(res)
+        return unless res.success?
+        Data.increment_job_stat(job_key, 'imported_groups_count', 1)
+        res
+      end
+
       def migrate_followers
         paginate(lambda { |follower|
           Data.increment_job_stat(job_key, 'exported_followers_count', 1)
@@ -158,7 +179,6 @@ module TentMigrate
       def import_post(post)
         case post['type']
         when %r{\Ahttps://tent.io/types/post/group/}
-          import_group_post(post)
         when %r{\Ahttps://tent.io/types/post/following/}
         when %r{\Ahttps://tent.io/types/post/follower/}
         when %r{\Ahttps://tent.io/types/post/profile/}
@@ -171,29 +191,6 @@ module TentMigrate
           p ['import_post', post['type']]
           import_standard_post(post)
         end
-      end
-
-      def import_group_post(post)
-        case post['content']['action']
-        when 'create'
-          p ['export_group', post]
-          Data.increment_job_stat(job_key, 'exported_groups_count', 1)
-          res = export_client.group.get(post['content']['id'])
-          p ['export_group', res.status, res.body]
-          raise Error.new(res.body) if error_response?(res)
-          return unless res.success?
-          group = res.body
-          import_group(group)
-        end
-      end
-
-      def import_group(group)
-        p ['import_group', group]
-        res = import_client.group.create(group)
-        raise Error.new("#{res.body}\n#{group.inspect}") if error_response?(res)
-        return unless res.success?
-        Data.increment_job_stat(job_key, 'imported_groups_count', 1)
-        res
       end
 
       def update_post_entity(post)
