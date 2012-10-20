@@ -196,17 +196,23 @@ module TentMigrate
         res
       end
 
+      def update_post_entity(post)
+        return post unless post['entity'] == export_app['entity']
+        post['entity'] = import_app['entity']
+        post
+      end
+
       def import_standard_post(post)
         post_versions = export_post_versions(post['id']) # TODO: handle more than 200 post versions
         if post_versions && post_versions.kind_of?(Array)
           post_versions.sort_by { |p| p['version'] * -1 }.map do |post_version|
-            res = import_client.post.create(post_version)
+            res = import_client.post.create(update_post_entity(post_version))
             raise Error.new(res.body) if error_response?(res)
           end
           Data.job_stat_set_add(job_key, 'imported_post_ids', post['id'])
           Data.increment_job_stat(job_key, 'imported_posts_count', 1)
         else
-          res = import_client.post.create(post)
+          res = import_client.post.create(update_post_entity(post))
           raise Error.new([res.body, post].join("\n")) if error_response?(res)
           return unless res.success?
           Data.increment_job_stat(job_key, 'imported_posts_count', 1)
