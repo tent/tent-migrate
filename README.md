@@ -1,4 +1,4 @@
-# Tent::Migrate
+# TentMigrate
 
 TODO: Write a gem description
 
